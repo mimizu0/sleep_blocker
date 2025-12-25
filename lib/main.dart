@@ -31,8 +31,8 @@ class SleepGuardApp extends StatefulWidget {
 
 class _SleepGuardAppState extends State<SleepGuardApp> {
   // 設定値（デフォルト値）
-  double _motionThreshold = 2.0;
-  int _timeToAlert = 10;
+  double _motionThreshold = 1.0;
+  int _timeToAlert = 60;
 
   // 状態管理用
   bool _isMonitoring = false;
@@ -140,7 +140,7 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
     }
 
     setState(() {
-      _statusMessage = "動いて！";
+      _statusMessage = "起きて！！";
     });
   }
 
@@ -157,7 +157,7 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
           builder: (context, setModalState) {
             return Container(
               padding: const EdgeInsets.all(16),
-              height: MediaQuery.of(context).size.height * 0.8,
+              height: MediaQuery.of(context).size.height * 0.9,
               child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -175,15 +175,15 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
                       label: "感度 (低いほど敏感)",
                       value: _motionThreshold.toStringAsFixed(1),
                       onDecrement: () {
-                        if (_motionThreshold > 0.5) {
-                          setState(() => _motionThreshold -= 0.5);
+                        if (_motionThreshold > 0.1) {
+                          setState(() => _motionThreshold -= 0.1);
                           setModalState(() {});
                           _saveSettings();
                         }
                       },
                       onIncrement: () {
-                        if (_motionThreshold < 10.0) {
-                          setState(() => _motionThreshold += 0.5);
+                        if (_motionThreshold < 5.0) {
+                          setState(() => _motionThreshold += 0.1);
                           setModalState(() {});
                           _saveSettings();
                         }
@@ -194,15 +194,15 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
                       label: "アラート時間 (秒)",
                       value: _timeToAlert.toString(),
                       onDecrement: () {
-                        if (_timeToAlert > 5) {
-                          setState(() => _timeToAlert -= 5);
+                        if (_timeToAlert > 10) {
+                          setState(() => _timeToAlert -= 10);
                           setModalState(() {});
                           _saveSettings();
                         }
                       },
                       onIncrement: () {
-                        if (_timeToAlert < 60) {
-                          setState(() => _timeToAlert += 5);
+                        if (_timeToAlert < 120) {
+                          setState(() => _timeToAlert += 10);
                           setModalState(() {});
                           _saveSettings();
                         }
