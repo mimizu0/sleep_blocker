@@ -1,12 +1,17 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'package:vibration/vibration.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initializeService();
   runApp(
     MaterialApp(
       theme: ThemeData(useMaterial3: true),
@@ -22,6 +27,125 @@ void main() {
   );
 }
 
+Future<void> initializeService() async {
+  final service = FlutterBackgroundService();
+
+  const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    'sleep_blocker_service',
+    'Sleep Blocker Service',
+    description: 'This channel is used for important notifications.',
+    importance: Importance.low,
+  );
+
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  if (Platform.isAndroid) {
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(channel);
+  }
+
+  await service.configure(
+    androidConfiguration: AndroidConfiguration(
+      onStart: onStart,
+      autoStart: false,
+      isForegroundMode: true,
+      notificationChannelId: 'sleep_blocker_service',
+      initialNotificationTitle: '居眠りブロッカー',
+      initialNotificationContent: '初期化中...',
+      foregroundServiceNotificationId: 888,
+    ),
+    iosConfiguration: IosConfiguration(
+      autoStart: false,
+      onForeground: onStart,
+      onBackground: onIosBackground,
+    ),
+  );
+}
+
+@pragma('vm:entry-point')
+Future<bool> onIosBackground(ServiceInstance service) async {
+  return true;
+}
+
+@pragma('vm:entry-point')
+void onStart(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
+
+  double motionThreshold = 2.0;
+  int timeToAlert = 10;
+  DateTime lastMoveTime = DateTime.now();
+  List<double>? userAccelerometerValues;
+  Timer? checkTimer;
+  StreamSubscription? subscription;
+
+  final prefs = await SharedPreferences.getInstance();
+  motionThreshold = prefs.getDouble('motionThreshold') ?? 2.0;
+  timeToAlert = prefs.getInt('timeToAlert') ?? 10;
+
+  service.on('stopService').listen((event) {
+    service.stopSelf();
+  });
+
+  service.on('updateSettings').listen((event) {
+    if (event != null) {
+      motionThreshold = event['motionThreshold'] ?? motionThreshold;
+      timeToAlert = event['timeToAlert'] ?? timeToAlert;
+    }
+  });
+
+  subscription = userAccelerometerEventStream().listen((
+    UserAccelerometerEvent event,
+  ) {
+    if (userAccelerometerValues == null) {
+      userAccelerometerValues = [event.x, event.y, event.z];
+      return;
+    }
+
+    double deltaX = (event.x - userAccelerometerValues![0]).abs();
+    double deltaY = (event.y - userAccelerometerValues![1]).abs();
+    double deltaZ = (event.z - userAccelerometerValues![2]).abs();
+    double totalMovement = deltaX + deltaY + deltaZ;
+
+    if (totalMovement > motionThreshold) {
+      lastMoveTime = DateTime.now();
+    }
+    userAccelerometerValues = [event.x, event.y, event.z];
+  });
+
+  checkTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+    final now = DateTime.now();
+    final difference = now.difference(lastMoveTime).inSeconds;
+
+    if (service is AndroidServiceInstance) {
+      if (await service.isForegroundService()) {
+        service.setForegroundNotificationInfo(
+          title: "居眠りブロッカー動作中",
+          content: difference >= timeToAlert
+              ? "起きて！！"
+              : "静止: ${difference}s / ${timeToAlert}s",
+        );
+      }
+    }
+
+    if (difference >= timeToAlert) {
+      Vibration.vibrate(pattern: [0, 500, 200, 500]);
+    }
+
+    service.invoke('updateStatus', {
+      "seconds": difference,
+      "timeToAlert": timeToAlert,
+      "isAlert": difference >= timeToAlert,
+    });
+  });
+
+  // 警告を抑制するための利用（実際には保持し続ける必要がある）
+  print("Service started with subscription: $subscription, timer: $checkTimer");
+}
+
 class SleepGuardApp extends StatefulWidget {
   const SleepGuardApp({super.key});
 
@@ -30,29 +154,51 @@ class SleepGuardApp extends StatefulWidget {
 }
 
 class _SleepGuardAppState extends State<SleepGuardApp> {
-  // 設定値（デフォルト値）
-  double _motionThreshold = 1.0;
-  int _timeToAlert = 60;
-
-  // 状態管理用
+  double _motionThreshold = 2.0;
+  int _timeToAlert = 10;
   bool _isMonitoring = false;
   String _statusMessage = "停止中";
-  DateTime _lastMoveTime = DateTime.now();
-  StreamSubscription? _accelerometerSubscription;
-  Timer? _checkTimer;
-
-  // 直前のセンサー値
-  List<double>? _userAccelerometerValues;
+  StreamSubscription? _statusSubscription;
 
   @override
   void initState() {
     super.initState();
-    // 画面が消えないようにする（センサー停止防止）
-    WakelockPlus.enable();
     _loadSettings();
+    _checkServiceStatus();
   }
 
-  // 設定の読み込み
+  Future<void> _checkServiceStatus() async {
+    final service = FlutterBackgroundService();
+    bool running = await service.isRunning();
+    setState(() {
+      _isMonitoring = running;
+      if (running) {
+        _statusMessage = "監視中";
+        _listenToStatus();
+      }
+    });
+  }
+
+  void _listenToStatus() {
+    _statusSubscription?.cancel();
+    _statusSubscription = FlutterBackgroundService().on('updateStatus').listen((
+      event,
+    ) {
+      if (event != null && _isMonitoring) {
+        setState(() {
+          int seconds = event['seconds'];
+          int limit = event['timeToAlert'];
+          bool isAlert = event['isAlert'];
+          if (isAlert) {
+            _statusMessage = "起きて！！";
+          } else {
+            _statusMessage = "静止: ${seconds}s / ${limit}s";
+          }
+        });
+      }
+    });
+  }
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -61,87 +207,43 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
     });
   }
 
-  // 設定の保存
   Future<void> _saveSettings() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('motionThreshold', _motionThreshold);
     await prefs.setInt('timeToAlert', _timeToAlert);
+
+    // 実行中ならバックグラウンドに通知
+    if (_isMonitoring) {
+      FlutterBackgroundService().invoke('updateSettings', {
+        'motionThreshold': _motionThreshold,
+        'timeToAlert': _timeToAlert,
+      });
+    }
   }
 
   @override
   void dispose() {
-    _stopMonitoring();
-    WakelockPlus.disable();
+    _statusSubscription?.cancel();
     super.dispose();
   }
 
-  // 監視スタート
-  void _startMonitoring() {
+  void _startMonitoring() async {
+    final service = FlutterBackgroundService();
+    await service.startService();
     setState(() {
       _isMonitoring = true;
       _statusMessage = "監視開始\n体につけてください";
-      _lastMoveTime = DateTime.now();
     });
-
-    _accelerometerSubscription = userAccelerometerEventStream().listen((
-      UserAccelerometerEvent event,
-    ) {
-      _checkMotion(event);
-    });
-
-    _checkTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      final now = DateTime.now();
-      final difference = now.difference(_lastMoveTime).inSeconds;
-
-      if (difference >= _timeToAlert) {
-        _triggerAlarm();
-      }
-
-      if (_isMonitoring) {
-        setState(() {
-          _statusMessage = "静止: ${difference}s / ${_timeToAlert}s";
-        });
-      }
-    });
+    _listenToStatus();
   }
 
-  // 監視ストップ
   void _stopMonitoring() {
-    _accelerometerSubscription?.cancel();
-    _checkTimer?.cancel();
+    FlutterBackgroundService().invoke('stopService');
     setState(() {
       _isMonitoring = false;
       _statusMessage = "停止中";
     });
-  }
-
-  void _checkMotion(UserAccelerometerEvent event) {
-    if (_userAccelerometerValues == null) {
-      _userAccelerometerValues = [event.x, event.y, event.z];
-      return;
-    }
-
-    double deltaX = (event.x - _userAccelerometerValues![0]).abs();
-    double deltaY = (event.y - _userAccelerometerValues![1]).abs();
-    double deltaZ = (event.z - _userAccelerometerValues![2]).abs();
-
-    double totalMovement = deltaX + deltaY + deltaZ;
-
-    if (totalMovement > _motionThreshold) {
-      _lastMoveTime = DateTime.now();
-    }
-
-    _userAccelerometerValues = [event.x, event.y, event.z];
-  }
-
-  Future<void> _triggerAlarm() async {
-    if (await Vibration.hasVibrator() ?? false) {
-      Vibration.vibrate(pattern: [0, 500, 200, 500]);
-    }
-
-    setState(() {
-      _statusMessage = "起きて！！";
-    });
+    _statusSubscription?.cancel();
   }
 
   void _openSettings() {
@@ -201,7 +303,7 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
                         }
                       },
                       onIncrement: () {
-                        if (_timeToAlert < 120) {
+                        if (_timeToAlert < 300) {
                           setState(() => _timeToAlert += 10);
                           setModalState(() {});
                           _saveSettings();
@@ -331,7 +433,7 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
                   style: const TextStyle(fontSize: 18, color: Colors.white),
                 ),
               ),
-              const SizedBox(height: 40), // 下部に余白を持たせてスクロール可能に
+              const SizedBox(height: 40),
             ],
           ),
         ),
