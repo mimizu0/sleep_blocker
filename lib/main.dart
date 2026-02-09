@@ -417,7 +417,7 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
             children: [
               const SizedBox(height: 20),
               Text(
-                "バックグラウンド動作のため、Android13以降では通知を許可してください。",
+                "Android 13以降では通知を許可してください。\n画面オフで停止する場合は、設定で「電池の最適化」を解除してください。",
                 style: TextStyle(
                   fontSize: 12,
                   color: _isMonitoring ? Colors.white70 : Colors.black54,
