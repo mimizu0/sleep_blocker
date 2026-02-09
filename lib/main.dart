@@ -165,6 +165,18 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
     super.initState();
     _loadSettings();
     _checkServiceStatus();
+    _requestNotificationPermission();
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    if (Platform.isAndroid) {
+      final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+      await flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.requestNotificationsPermission();
+    }
   }
 
   Future<void> _checkServiceStatus() async {
@@ -403,6 +415,15 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              const SizedBox(height: 20),
+              Text(
+                "Android 13以降では通知を許可してください。\n画面オフで停止する場合は、設定で「電池の最適化」を解除してください。",
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _isMonitoring ? Colors.white70 : Colors.black54,
+                ),
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 20),
               Text(
                 _statusMessage,
