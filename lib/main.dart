@@ -97,9 +97,9 @@ void onStart(ServiceInstance service) async {
     }
   });
 
-  subscription = userAccelerometerEventStream().listen((
-    UserAccelerometerEvent event,
-  ) {
+  subscription = userAccelerometerEventStream(
+    samplingPeriod: SensorInterval.normalInterval,
+  ).listen((UserAccelerometerEvent event) {
     if (userAccelerometerValues == null) {
       userAccelerometerValues = [event.x, event.y, event.z];
       return;
@@ -119,15 +119,17 @@ void onStart(ServiceInstance service) async {
   checkTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
     final now = DateTime.now();
     final difference = now.difference(lastMoveTime).inSeconds;
+    final bool isAlert = difference >= timeToAlert;
 
     if (service is AndroidServiceInstance) {
       if (await service.isForegroundService()) {
-        service.setForegroundNotificationInfo(
-          title: "居眠りブロッカー動作中",
-          content: difference >= timeToAlert
-              ? "起きて！！"
-              : "静止: ${difference}s / ${timeToAlert}s",
-        );
+        // バッテリー消費削減のため、警告中、または5秒おきに通知を更新
+        if (isAlert || difference % 5 == 0 || difference == 0) {
+          service.setForegroundNotificationInfo(
+            title: "居眠りブロッカー動作中",
+            content: isAlert ? "起きて！！" : "静止: ${difference}s / ${timeToAlert}s",
+          );
+        }
       }
     }
 
