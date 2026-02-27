@@ -50,5 +50,11 @@
 		<string>fetch</string>
 		<string>processing</string>
 	</array>
+	<key>NSMotionUsageDescription</key>
+	<string>居眠り検知のために加速度センサーを使用します。</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>dev.flutter.background.refresh</string>
+	</array>
 </dict>
 </plist>

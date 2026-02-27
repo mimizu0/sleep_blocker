@@ -97,48 +97,58 @@ void onStart(ServiceInstance service) async {
     }
   });
 
-  subscription = userAccelerometerEventStream().listen((
-    UserAccelerometerEvent event,
-  ) {
-    if (userAccelerometerValues == null) {
-      userAccelerometerValues = [event.x, event.y, event.z];
-      return;
-    }
+  subscription =
+      userAccelerometerEventStream(
+        samplingPeriod: SensorInterval.normalInterval,
+      ).listen((UserAccelerometerEvent event) {
+        if (userAccelerometerValues == null) {
+          userAccelerometerValues = [event.x, event.y, event.z];
+          return;
+        }
 
-    double deltaX = (event.x - userAccelerometerValues![0]).abs();
-    double deltaY = (event.y - userAccelerometerValues![1]).abs();
-    double deltaZ = (event.z - userAccelerometerValues![2]).abs();
-    double totalMovement = deltaX + deltaY + deltaZ;
+        double deltaX = (event.x - userAccelerometerValues![0]).abs();
+        double deltaY = (event.y - userAccelerometerValues![1]).abs();
+        double deltaZ = (event.z - userAccelerometerValues![2]).abs();
+        double totalMovement = deltaX + deltaY + deltaZ;
 
-    if (totalMovement > motionThreshold) {
-      lastMoveTime = DateTime.now();
-    }
-    userAccelerometerValues = [event.x, event.y, event.z];
-  });
+        if (totalMovement > motionThreshold) {
+          lastMoveTime = DateTime.now();
+        }
+        userAccelerometerValues = [event.x, event.y, event.z];
+      });
+
+  bool lastAlertState = false;
+
+  if (service is AndroidServiceInstance) {
+    service.setForegroundNotificationInfo(title: "居眠りブロッカー", content: "動作中");
+  }
 
   checkTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
     final now = DateTime.now();
     final difference = now.difference(lastMoveTime).inSeconds;
+    final bool isAlert = difference >= timeToAlert;
 
     if (service is AndroidServiceInstance) {
       if (await service.isForegroundService()) {
-        service.setForegroundNotificationInfo(
-          title: "居眠りブロッカー動作中",
-          content: difference >= timeToAlert
-              ? "起きて！！"
-              : "静止: ${difference}s / ${timeToAlert}s",
-        );
+        // 状態（通常/アラート）が変化した時のみ通知を更新
+        if (isAlert != lastAlertState) {
+          service.setForegroundNotificationInfo(
+            title: "居眠りブロッカー",
+            content: isAlert ? "起きて！！" : "動作中",
+          );
+          lastAlertState = isAlert;
+        }
       }
     }
 
-    if (difference >= timeToAlert) {
+    if (isAlert) {
       Vibration.vibrate(pattern: [0, 500, 200, 500]);
     }
 
     service.invoke('updateStatus', {
       "seconds": difference,
       "timeToAlert": timeToAlert,
-      "isAlert": difference >= timeToAlert,
+      "isAlert": isAlert,
     });
   });
 
@@ -165,6 +175,18 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
     super.initState();
     _loadSettings();
     _checkServiceStatus();
+    _requestNotificationPermission();
+  }
+
+  Future<void> _requestNotificationPermission() async {
+    if (Platform.isAndroid) {
+      final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+      await flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >()
+          ?.requestNotificationsPermission();
+    }
   }
 
   Future<void> _checkServiceStatus() async {
@@ -403,6 +425,15 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              const SizedBox(height: 20),
+              Text(
+                "Android 13以降では通知を許可してください。\nバックグラウンドで正常に動作しない場合は、設定で「電池の最適化」を解除してください。",
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _isMonitoring ? Colors.white70 : Colors.black54,
+                ),
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 20),
               Text(
                 _statusMessage,
