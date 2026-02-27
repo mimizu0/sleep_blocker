@@ -1,16 +1,14 @@
-# sleep_blocker
+# 居眠りブロッカー
 
-A new Flutter project.
+加速度センサーを利用してユーザーの動きを検知し、一定時間動きがない場合に振動でアラートを鳴らす、Flutter製の居眠り防止アプリです。
 
-## Getting Started
+## 使い方
+1. アプリを起動し、必要に応じて設定から感度や時間を調整。
+2. 「監視開始」ボタンをタップ。
+3. デバイスをポケットや腕など、体に固定して使用。
+4. 終わったら「停止」ボタンを押して終了。
 
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 注意事項
+- Android 13以降ではバックグラウンド動作に通知の許可が必要です。
+- バックグラウンドの動作が上手くいかない場合は、OSの設定で「電池の最適化」を解除すると良いかもしれないです。
+- iOSの場合はバックグラウンド動作が正常に働かない可能性が高いです。
