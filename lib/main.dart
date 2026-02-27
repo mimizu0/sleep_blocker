@@ -9,6 +9,13 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+class AppConfig {
+  static const double defaultMotionThreshold = 0.1;
+  static const int defaultTimeToAlert = 90;
+  static const String keyMotionThreshold = 'motionThreshold';
+  static const String keyTimeToAlert = 'timeToAlert';
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeService();
@@ -75,16 +82,19 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
 
-  double motionThreshold = 2.0;
-  int timeToAlert = 10;
+  double motionThreshold = AppConfig.defaultMotionThreshold;
+  int timeToAlert = AppConfig.defaultTimeToAlert;
   DateTime lastMoveTime = DateTime.now();
   List<double>? userAccelerometerValues;
   Timer? checkTimer;
   StreamSubscription? subscription;
 
   final prefs = await SharedPreferences.getInstance();
-  motionThreshold = prefs.getDouble('motionThreshold') ?? 2.0;
-  timeToAlert = prefs.getInt('timeToAlert') ?? 10;
+  motionThreshold =
+      prefs.getDouble(AppConfig.keyMotionThreshold) ??
+      AppConfig.defaultMotionThreshold;
+  timeToAlert =
+      prefs.getInt(AppConfig.keyTimeToAlert) ?? AppConfig.defaultTimeToAlert;
 
   service.on('stopService').listen((event) {
     service.stopSelf();
@@ -164,8 +174,8 @@ class SleepGuardApp extends StatefulWidget {
 }
 
 class _SleepGuardAppState extends State<SleepGuardApp> {
-  double _motionThreshold = 2.0;
-  int _timeToAlert = 10;
+  double _motionThreshold = AppConfig.defaultMotionThreshold;
+  int _timeToAlert = AppConfig.defaultTimeToAlert;
   bool _isMonitoring = false;
   String _statusMessage = "停止中";
   StreamSubscription? _statusSubscription;
@@ -224,21 +234,25 @@ class _SleepGuardAppState extends State<SleepGuardApp> {
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _motionThreshold = prefs.getDouble('motionThreshold') ?? 2.0;
-      _timeToAlert = prefs.getInt('timeToAlert') ?? 10;
+      _motionThreshold =
+          prefs.getDouble(AppConfig.keyMotionThreshold) ??
+          AppConfig.defaultMotionThreshold;
+      _timeToAlert =
+          prefs.getInt(AppConfig.keyTimeToAlert) ??
+          AppConfig.defaultTimeToAlert;
     });
   }
 
   Future<void> _saveSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('motionThreshold', _motionThreshold);
-    await prefs.setInt('timeToAlert', _timeToAlert);
+    await prefs.setDouble(AppConfig.keyMotionThreshold, _motionThreshold);
+    await prefs.setInt(AppConfig.keyTimeToAlert, _timeToAlert);
 
     // 実行中ならバックグラウンドに通知
     if (_isMonitoring) {
       FlutterBackgroundService().invoke('updateSettings', {
-        'motionThreshold': _motionThreshold,
-        'timeToAlert': _timeToAlert,
+        AppConfig.keyMotionThreshold: _motionThreshold,
+        AppConfig.keyTimeToAlert: _timeToAlert,
       });
     }
   }
